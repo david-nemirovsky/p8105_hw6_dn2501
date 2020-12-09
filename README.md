@@ -1,1 +1,3 @@
 # p8105_hw6_dn2501
+
+This is my solution to HW #6...
