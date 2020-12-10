@@ -28,7 +28,7 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 
 set.seed(1)
-memory.limit(100000)
+memory.limit(1000000)
 ```
 
 ## **Problem 1**
@@ -198,3 +198,73 @@ According to the above violin plots, Jeff's second model which uses head circumf
 
 ## **Problem 3**
 
+Load and tidy the "weather" data:
+
+```{r weather data, message = F}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Let's first create a linear model to test minimum temperature as a predictor of maximum temperature:
+
+```{r model}
+weather_df %>% 
+  ggplot(aes(x = tmin, y = tmax)) + 
+  geom_point()
+
+model_fit = lm(tmax ~ tmin, data = weather_df)
+summary(model_fit)
+```
+
+Now, let's bootstrap to find the 95% CI for $\hat{r^2}$ in a bootstrap sample of size 5000:
+
+```{r r suqared bootstrap}
+weather_df %>% 
+  bootstrap(5000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
+    results = map(models, broom::glance)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  summarize(
+    ci_lower = quantile(adj.r.squared, 0.025), 
+    ci_upper = quantile(adj.r.squared, 0.975)
+  ) %>% 
+  knitr::kable(digits = 3)
+```
+
+Finally, let's bootstrap to find the 95% CI for $log(\hat{\beta_0} \cdot \hat{\beta_1})$ in a bootstrap sample of size 5000:
+
+```{r log coeffs bootstrap}
+weather_df %>% 
+  bootstrap(5000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  mutate( 
+    term = fct_recode(as.factor(term), beta_0 = "(Intercept)", beta_1 = "tmin")) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  mutate(beta_0 = lag(beta_0)) %>% 
+  drop_na() %>% 
+  summarize(
+    ci_lower = quantile(log(beta_0 * beta_1), 0.025), 
+    ci_upper = quantile(log(beta_0 * beta_1), 0.975)
+  ) %>% 
+  knitr::kable(digits = 3)
+```
